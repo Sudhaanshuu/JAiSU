@@ -37,7 +37,7 @@ function App() {
     try {
       const worker = await createWorker();
       await worker.loadLanguage('eng');
-      await worker.initialize('eng');
+      await worker.reinitialize('eng');
       const { data: { text } } = await worker.recognize(file);
       await worker.terminate();
       setExtractedText(text);
