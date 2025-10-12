@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Menu, ArrowUp, MessageSquare, Edit3, X, Upload, Loader2, ScanText, FileText, BarChart2, Languages, Home } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { createWorker } from 'tesseract.js';
 
 type Message = {
@@ -87,7 +85,7 @@ function HomePage({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') 
             onClick={() => onNavigate('ocr')}
             className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all cursor-pointer p-8 border-2 border-transparent hover:border-orange-500 group"
           >
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <ScanText className="w-8 h-8 text-white" />
             </div>
             <h3 className="text-2xl font-bold text-gray-900 mb-3">Text Extractor</h3>
@@ -157,7 +155,7 @@ function ChatApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =
     setCurrentConversationId(newConv.id);
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
 
     let convId = currentConversationId;
@@ -196,11 +194,54 @@ function ChatApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =
     setInputMessage('');
     setIsLoading(true);
     
-    setTimeout(() => {
+    try {
+      // Get current conversation for context
+      const currentConv = conversations.find(c => c.id === convId);
+      const conversationMessages = currentConv?.messages || [];
+
+      // Call Puter.com AI API v2
+      const response = await fetch('https://api.puter.com/drivers/call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          interface: 'puter-chat-completion',
+          driver: 'openai-completion',
+          method: 'complete',
+          args: {
+            messages: [
+              ...conversationMessages.map(m => ({
+                role: m.role,
+                content: m.content
+              })),
+              { role: 'user', content: inputMessage }
+            ],
+            model: 'gpt-3.5-turbo',
+            temperature: 0.7
+          }
+        })
+      });
+
+      const data = await response.json();
+      console.log('Puter API Response:', data);
+
+      let aiResponse = "I apologize, but I couldn't generate a response. Please try again.";
+      
+      if (data.success && data.result) {
+        if (typeof data.result === 'string') {
+          aiResponse = data.result;
+        } else if (data.result.message?.content) {
+          aiResponse = data.result.message.content;
+        } else if (data.result.choices?.[0]?.message?.content) {
+          aiResponse = data.result.choices[0].message.content;
+        }
+      }
+
       const assistantMsg: Message = {
         id: generateId(),
         role: "assistant",
-        content: "I'm a demo assistant in this merged app. In a real implementation, this would connect to an AI service like Claude or GPT. I can help you with various tasks!",
+        content: aiResponse,
         timestamp: Date.now(),
       };
 
@@ -211,8 +252,25 @@ function ChatApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =
             : c
         )
       );
+    } catch (error) {
+      console.error('Error calling Puter AI:', error);
+      const errorMsg: Message = {
+        id: generateId(),
+        role: "assistant",
+        content: "I'm sorry, I encountered an error while processing your request. Please check the console for details.",
+        timestamp: Date.now(),
+      };
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? { ...c, messages: [...c.messages, errorMsg], lastUpdated: Date.now() }
+            : c
+        )
+      );
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -309,6 +367,19 @@ function ChatApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =
               {currentConversation.messages.map((m) => (
                 <ChatMessage key={m.id} message={m} />
               ))}
+              {isLoading && (
+                <div className="w-full py-3 bg-gray-50">
+                  <div className="max-w-3xl mx-auto px-4 flex gap-4">
+                    <div className="w-8 h-8 rounded flex items-center justify-center text-white font-semibold text-sm bg-gradient-to-br from-orange-500 to-red-500">
+                      J
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
+                      <span className="text-gray-600">Thinking...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -336,7 +407,7 @@ function ChatApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =
             <button
               onClick={handleSendMessage}
               disabled={!inputMessage.trim() || isLoading}
-              className="p-2 rounded-lg text-white transition-all disabled:opacity-50 bg-gradient-to-br from-orange-500 to-red-500"
+              className="p-2 rounded-lg text-white transition-all disabled:opacity-50 bg-gradient-to-br from-orange-500 to-red-500 hover:shadow-lg"
             >
               <ArrowUp size={18} />
             </button>
@@ -355,15 +426,13 @@ function ChatMessage({ message }: { message: Message }) {
       <div className="max-w-3xl mx-auto px-4 flex gap-4">
         <div
           className={`w-8 h-8 rounded flex items-center justify-center text-white font-semibold text-sm ${
-            isUser ? "bg-gradient-to-br from-orange-500 to-red-500" : "bg-indigo-600"
+            isUser ? "bg-gradient-to-br from-orange-500 to-red-500" : "bg-gradient-to-br from-orange-500 to-red-500"
           }`}
         >
           {isUser ? "U" : "J"}
         </div>
-        <div className="flex-1 prose prose-sm md:prose-base max-w-none text-gray-800">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
+        <div className="flex-1 text-gray-800 whitespace-pre-wrap">
+          {message.content}
         </div>
       </div>
     </div>
@@ -376,24 +445,38 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
   const [extractedText, setExtractedText] = useState('');
   const [detectedLanguage, setDetectedLanguage] = useState('');
   const [textStats, setTextStats] = useState<TextStats | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+
     setIsProcessing(true);
+    setExtractedText('');
+    setTextStats(null);
+    setDetectedLanguage('');
+
     try {
-      const worker = await createWorker();
-      await worker.reinitialize('eng');
-      await worker.reinitialize('eng');
+      const worker = await createWorker('eng');
       const { data: { text } } = await worker.recognize(file);
       await worker.terminate();
-      setExtractedText(text);
-      analyzeText(text);
+      
+      if (text.trim()) {
+        setExtractedText(text);
+        analyzeText(text);
+      } else {
+        setExtractedText('No text detected in the image. Please try another image.');
+      }
     } catch (error) {
       console.error('Error processing image:', error);
-      setExtractedText('Error processing image. Please try again.');
+      setExtractedText('Error processing image. Please try again with a different image.');
     }
     setIsProcessing(false);
   };
@@ -415,7 +498,7 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button onClick={() => onNavigate('home')} className="flex items-center space-x-3 hover:opacity-80">
-              <div className="bg-indigo-600 p-2 rounded-lg">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-orange-500 to-red-500">
                 <ScanText className="w-6 h-6 text-white" />
               </div>
               <h1 className="text-2xl font-bold text-gray-800">Jaisu Text Extractor</h1>
@@ -486,8 +569,8 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
                 className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-orange-500 transition-colors"
               >
                 <div className="flex flex-col items-center">
-                  <div className="bg-indigo-50 p-4 rounded-full mb-4">
-                    <Upload className="w-8 h-8 text-indigo-600" />
+                  <div className="bg-orange-50 p-4 rounded-full mb-4">
+                    <Upload className="w-8 h-8 text-orange-500" />
                   </div>
                   <p className="text-gray-700 text-lg font-medium">Drop your image here or click to upload</p>
                   <p className="text-gray-500 text-sm mt-2">Supports PNG, JPG, JPEG</p>
@@ -500,20 +583,27 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
                   className="hidden"
                 />
               </div>
+
+              {imagePreview && (
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Image:</p>
+                  <img src={imagePreview} alt="Preview" className="max-w-full h-auto rounded-lg" />
+                </div>
+              )}
               
               {isProcessing && (
-                <div className="flex items-center justify-center space-x-3 text-indigo-600">
+                <div className="flex items-center justify-center space-x-3 text-orange-500">
                   <Loader2 className="w-6 h-6 animate-spin" />
-                  <span className="text-lg">Processing...</span>
+                  <span className="text-lg">Processing your image...</span>
                 </div>
               )}
 
-              {extractedText && (
+              {extractedText && !isProcessing && (
                 <div className="space-y-6">
                   {activeTab === 'ocr' && (
                     <div className="bg-gray-50 rounded-xl p-5 border border-gray-200">
                       <div className="flex items-center space-x-2 mb-3">
-                        <FileText className="w-5 h-5 text-indigo-600" />
+                        <FileText className="w-5 h-5 text-orange-500" />
                         <h3 className="text-lg font-medium text-gray-800">Extracted Text</h3>
                       </div>
                       <p className="text-gray-700 whitespace-pre-wrap">{extractedText}</p>
@@ -523,23 +613,23 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
                   {activeTab === 'stats' && textStats && (
                     <div className="bg-gray-50 rounded-xl p-5 border border-gray-200">
                       <div className="flex items-center space-x-2 mb-4">
-                        <BarChart2 className="w-5 h-5 text-indigo-600" />
+                        <BarChart2 className="w-5 h-5 text-orange-500" />
                         <h3 className="text-lg font-medium text-gray-800">Text Statistics</h3>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
                           <p className="text-gray-500 text-sm">Characters</p>
                           <p className="text-2xl font-semibold text-gray-800">{textStats.characters}</p>
                         </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
                           <p className="text-gray-500 text-sm">Words</p>
                           <p className="text-2xl font-semibold text-gray-800">{textStats.words}</p>
                         </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
                           <p className="text-gray-500 text-sm">Sentences</p>
                           <p className="text-2xl font-semibold text-gray-800">{textStats.sentences}</p>
                         </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
                           <p className="text-gray-500 text-sm">Paragraphs</p>
                           <p className="text-2xl font-semibold text-gray-800">{textStats.paragraphs}</p>
                         </div>
@@ -550,11 +640,11 @@ function OCRApp({ onNavigate }: { onNavigate: (page: 'home' | 'chat' | 'ocr') =>
                   {activeTab === 'language' && (
                     <div className="bg-gray-50 rounded-xl p-5 border border-gray-200">
                       <div className="flex items-center space-x-2 mb-3">
-                        <Languages className="w-5 h-5 text-indigo-600" />
+                        <Languages className="w-5 h-5 text-orange-500" />
                         <h3 className="text-lg font-medium text-gray-800">Language Detection</h3>
                       </div>
                       <p className="text-gray-700">
-                        Detected Language: <span className="font-semibold text-indigo-600">{detectedLanguage}</span>
+                        Detected Language: <span className="font-semibold text-orange-500">{detectedLanguage}</span>
                       </p>
                     </div>
                   )}
