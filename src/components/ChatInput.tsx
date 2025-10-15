@@ -29,10 +29,10 @@ export function ChatInput({
   };
 
   return (
-    <div className="border-t border-gray-200 bg-white">
+    <div className="border-t border-gray-200 bg-white w-full">
       <form
         onSubmit={handleSubmit}
-        className="max-w-3xl mx-auto px-4 py-3 flex items-end gap-2"
+        className="mx-auto flex items-end gap-2 px-3 py-2 sm:px-4 sm:py-3 max-w-full sm:max-w-3xl"
       >
         <div className="flex-1 flex items-end rounded-2xl border border-gray-200 bg-gray-50 focus-within:ring-2 focus-within:ring-[#ff6b4a]">
           <textarea
@@ -48,13 +48,13 @@ export function ChatInput({
             placeholder="Message Jaisu..."
             disabled={disabled}
             rows={1}
-            className="flex-1 bg-transparent px-4 py-3 resize-none max-h-32 text-sm focus:outline-none"
+            className="flex-1 bg-transparent px-3 py-2 sm:px-4 sm:py-3 resize-none max-h-32 text-sm sm:text-base focus:outline-none"
           />
         </div>
         <button
           type="submit"
           disabled={!message.trim() || disabled}
-          className="p-2 rounded-lg text-white transition-all disabled:opacity-50"
+          className="p-2 sm:p-3 rounded-lg text-white transition-all disabled:opacity-50"
           style={{ backgroundColor: "#ff6b4a" }}
         >
           <ArrowUp size={18} />
